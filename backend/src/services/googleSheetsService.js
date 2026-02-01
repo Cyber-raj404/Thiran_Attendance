@@ -59,7 +59,7 @@ const mapRowToParticipant = (row, headers, sheetName) => {
     };
 
     // Extract basics (Common across sheets)
-    const id = getCol('Booking ID');
+    const id = getCol('Booking ID') || getCol('Unique ID');
     if (!id) return null; // Skip empty rows
 
     const name = getCol('Name');
@@ -71,9 +71,9 @@ const mapRowToParticipant = (row, headers, sheetName) => {
 
     // Event Name Fallback
     let eventName = '';
-    if (sheetName === 'Day 1') eventName = getCol('Day One');
-    else if (sheetName === 'Day 2') eventName = getCol('Day Two') || getCol('Day One');
-    else if (sheetName === 'Day 3') eventName = getCol('Day Three') || getCol('Day One');
+    if (sheetName === 'Day 1') eventName = getCol('Event Name');
+    else if (sheetName === 'Day 2') eventName = getCol('Event Name') || getCol('Event Name');
+    else if (sheetName === 'Day 3') eventName = getCol('Event Name') || getCol('Event Name');
 
     const attData = {};
 
