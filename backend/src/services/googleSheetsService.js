@@ -158,6 +158,11 @@ const getParticipantById = async (id) => {
     }
 };
 
+// Basic In-Memory Cache
+let participantsCache = null;
+let lastCacheTime = 0;
+const CACHE_DURATION = 60 * 1000; // 60 Seconds
+
 const getAllParticipants = async () => {
     const auth = getAuthClient();
     if (!auth) {
@@ -165,25 +170,35 @@ const getAllParticipants = async () => {
         return mockParticipants;
     }
 
+    // Check Cache
+    const now = Date.now();
+    if (participantsCache && (now - lastCacheTime < CACHE_DURATION)) {
+        console.log('[CACHE] Returning cached participants');
+        return participantsCache;
+    }
+
     try {
         const spreadsheetId = process.env.GOOGLE_SHEET_ID;
         const sheetNames = ['Day 1', 'Day 2', 'Day 3'];
 
-        // Fetch sheets sequentially or with individual error handling to prevent one missing sheet from failing all
-        const responses = [];
-        for (const sheetName of sheetNames) {
-            try {
-                const res = await sheets.spreadsheets.values.get({ auth, spreadsheetId, range: sheetName });
-                responses.push({ sheetName, data: res.data });
-            } catch (err) {
-                console.warn(`[WARN] Skipping sheet '${sheetName}': ${err.message}`);
-            }
-        }
+        console.log('[API] Fetching sheets in parallel...');
+        // Parallel Fetching using Promise.all
+        const sheetsRequests = sheetNames.map(sheetName =>
+            sheets.spreadsheets.values.get({ auth, spreadsheetId, range: sheetName })
+                .then(res => ({ sheetName, data: res.data }))
+                .catch(err => {
+                    console.warn(`[WARN] Skipping sheet '${sheetName}': ${err.message}`);
+                    return { sheetName, data: null };
+                })
+        );
+
+        const responses = await Promise.all(sheetsRequests);
 
         // Map to store merged participants by ID
         const participantsMap = new Map();
 
         responses.forEach(({ sheetName, data }) => {
+            if (!data) return;
             const rows = data.values;
             if (!rows || rows.length === 0) return;
 
@@ -207,7 +222,14 @@ const getAllParticipants = async () => {
             }
         });
 
-        return Array.from(participantsMap.values());
+        const result = Array.from(participantsMap.values());
+
+        // Update Cache
+        participantsCache = result;
+        lastCacheTime = now;
+        console.log(`[API] Fetched ${result.length} participants and cached.`);
+
+        return result;
 
     } catch (error) {
         console.error("Google Sheets API Error:", error);
@@ -282,6 +304,11 @@ const markAttendance = async (id, sessionId, status) => {
             valueInputOption: 'RAW',
             resource: { values: [[status]] }
         });
+
+        // Invalidate Cache and Updated locally if possible (ideal)
+        // For now, simple clear is enough
+        participantsCache = null;
+        lastCacheTime = 0;
 
         return await getParticipantById(id);
 
